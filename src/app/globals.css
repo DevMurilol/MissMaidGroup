@@ -1,0 +1,257 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #212121;
+
+  --color-brand-50: #f1f8f1;
+  --color-brand-100: #dcefdd;
+  --color-brand-200: #b8dfba;
+  --color-brand-300: #8fcb92;
+  --color-brand-400: #66b56b;
+  --color-brand-500: #4caf50;
+  --color-brand-600: #3d9541;
+  --color-brand-700: #2e7d32;
+  --color-brand-800: #245e28;
+  --color-brand-900: #1c4a20;
+
+  --color-sand-50: #fdfcf9;
+  --color-sand-100: #f7f3e9;
+  --color-sand-200: #efe7d3;
+
+  --color-neutral-50: #f5f5f5;
+  --color-neutral-200: #e4e4e4;
+  --color-neutral-400: #9e9e9e;
+  --color-neutral-700: #4a4a4a;
+  --color-neutral-900: #212121;
+
+  --radius-brand: 8px;
+  --shadow-soft: 0 1px 2px rgba(33, 33, 33, 0.04), 0 8px 24px -12px rgba(33, 33, 33, 0.12);
+  --shadow-soft-hover: 0 4px 8px rgba(33, 33, 33, 0.06), 0 16px 32px -12px rgba(46, 125, 50, 0.18);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-brand-50: var(--color-brand-50);
+  --color-brand-100: var(--color-brand-100);
+  --color-brand-200: var(--color-brand-200);
+  --color-brand-300: var(--color-brand-300);
+  --color-brand-400: var(--color-brand-400);
+  --color-brand-500: var(--color-brand-500);
+  --color-brand-600: var(--color-brand-600);
+  --color-brand-700: var(--color-brand-700);
+  --color-brand-800: var(--color-brand-800);
+  --color-brand-900: var(--color-brand-900);
+
+  --color-sand-50: var(--color-sand-50);
+  --color-sand-100: var(--color-sand-100);
+  --color-sand-200: var(--color-sand-200);
+
+  --color-neutral-50: var(--color-neutral-50);
+  --color-neutral-200: var(--color-neutral-200);
+  --color-neutral-400: var(--color-neutral-400);
+  --color-neutral-700: var(--color-neutral-700);
+  --color-neutral-900: var(--color-neutral-900);
+
+  --font-heading: var(--font-inter);
+  --font-sans: var(--font-lato);
+
+  --radius-brand: var(--radius-brand);
+
+  --shadow-soft: var(--shadow-soft);
+  --shadow-soft-hover: var(--shadow-soft-hover);
+
+  --animate-fade-up: fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-marquee: marquee 40s linear infinite;
+
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-lato), ui-sans-serif, system-ui, sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+.balance {
+  text-wrap: balance;
+}
+
+.input-field {
+  width: 100%;
+  border-radius: var(--radius-brand);
+  border: 1px solid var(--color-neutral-200);
+  background: white;
+  padding: 0.75rem 1rem;
+  font-size: 0.9375rem;
+  color: var(--color-neutral-900);
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.input-field::placeholder {
+  color: var(--color-neutral-400);
+}
+
+.input-field:focus {
+  outline: none;
+  border-color: var(--color-brand-500);
+  box-shadow: 0 0 0 3px var(--color-brand-100);
+}
+
+/* ==========================================================================
+   Scroll-linked motion
+   --------------------------------------------------------------------------
+   Native scroll-driven animations, no JavaScript and no animation library.
+   The whole block is gated twice:
+
+     @supports  - browsers without scroll timelines (Firefox at time of
+                  writing) simply get static, fully visible content.
+     @media     - prefers-reduced-motion is not decoration here. Scroll-linked
+                  motion is a documented vestibular trigger.
+
+   The base state below the guards must therefore stay VISIBLE. Never gate
+   visibility on the animation running, or an unsupported browser renders a
+   blank page.
+
+   One easing curve for the whole site, applied through the keyframe stops
+   rather than a timing function: scroll-driven animations must run `linear`,
+   because the scroll position IS the clock.
+   ========================================================================== */
+
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    /*
+     * A section's life across its own passage through the viewport:
+     *   0.00 - 0.22  rising in, fading up
+     *   0.22 - 0.72  settled, fully legible
+     *   0.72 - 1.00  drifting up, dimming to the floor
+     *
+     * One animation over the full `cover 0% -> cover 100%` range, so the
+     * timeline always runs to completion. A range that ends early lets the
+     * animation finish while the element is still on screen, and the value
+     * snaps back on the way out.
+     */
+    .reveal {
+      animation: reveal-cycle linear both;
+      animation-timeline: view();
+      animation-range: cover 0% cover 100%;
+    }
+
+    /*
+     * Stagger by shifting the start of the range, never with a time delay.
+     * A delay desynchronises from scroll: on a fast flick it is still counting
+     * after the movement stopped, and cards land after the user has settled.
+     * --reveal-index is capped in the component so late cards still finish.
+     */
+    .reveal[style*="--reveal-index"] {
+      animation-range-start: cover calc(var(--reveal-index, 0) * 3%);
+    }
+
+    /*
+     * Entry-only variant. Fades in, then holds at full opacity forever.
+     * Used for anything the visitor interacts with while scrolling, above all
+     * the quote form, which must never dim under a half-typed answer.
+     */
+    .reveal--enter {
+      animation-name: reveal-enter;
+      animation-range: cover 0% cover 42%;
+    }
+
+    /*
+     * The hero recedes rather than reveals: it is already on screen at load,
+     * so it must start at rest for LCP. `exit` measures the element leaving
+     * through the top of the viewport, which auto-adapts to whatever height
+     * the hero ends up at on a given breakpoint.
+     */
+    .hero-recede {
+      animation: hero-recede linear both;
+      animation-timeline: view();
+      animation-range: exit 0% exit 100%;
+    }
+  }
+}
+
+@keyframes reveal-cycle {
+  0% {
+    opacity: 0;
+    transform: translateY(32px);
+  }
+  22% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  72% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    /*
+     * Floors well above zero. The page is ~13,700px and people scroll back up
+     * to re-read services before filling in the quote form. A section that had
+     * vanished would read as a broken site, not as a stylish one.
+     */
+    opacity: 0.55;
+    transform: translateY(-24px);
+  }
+}
+
+@keyframes reveal-enter {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hero-recede {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    /* Small travel and a shallow scale. Past about 0.94 it stops reading as
+       depth and starts reading as a bug. */
+    opacity: 0.25;
+    transform: translateY(-12%) scale(0.96);
+  }
+}

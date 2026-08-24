@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+  // The default "fast" query compiler embeds a ~4.8MB base64 WASM blob, which
+  // pushes the Cloudflare Worker past the 3MiB gzip limit of the Free plan.
+  // "small" trades a little query-planning speed for roughly half the size.
+  compilerBuild = "small"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ServiceType {
+  regular
+  deep
+  move
+  airbnb
+}
+
+enum Frequency {
+  once
+  weekly
+  fortnightly
+  monthly
+}
+
+enum LeadStatus {
+  new
+  contacted
+  booked
+  archived
+}
+
+model Service {
+  id          String      @id @default(cuid())
+  slug        ServiceType @unique
+  name        String
+  description String
+  points      String[]
+  icon        String
+  isActive    Boolean     @default(true)
+  isFeatured  Boolean     @default(false)
+  sortOrder   Int         @default(0)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model AddOn {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  price     Decimal  @db.Decimal(10, 2)
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PricingRule {
+  id                     String   @id @default(cuid())
+  baseCallout            Decimal  @default(60) @db.Decimal(10, 2)
+  perBedroom             Decimal  @default(25) @db.Decimal(10, 2)
+  perBathroom            Decimal  @default(20) @db.Decimal(10, 2)
+  regularMultiplier      Decimal  @default(1) @db.Decimal(4, 2)
+  deepMultiplier         Decimal  @default(1.4) @db.Decimal(4, 2)
+  moveMultiplier         Decimal  @default(1.6) @db.Decimal(4, 2)
+  airbnbMultiplier       Decimal  @default(1.15) @db.Decimal(4, 2)
+  weeklyDiscount         Decimal  @default(0.15) @db.Decimal(4, 2)
+  fortnightlyDiscount    Decimal  @default(0.10) @db.Decimal(4, 2)
+  monthlyDiscount        Decimal  @default(0.05) @db.Decimal(4, 2)
+  updatedAt              DateTime @updatedAt
+}
+
+model Lead {
+  id            String      @id @default(cuid())
+  name          String
+  email         String
+  phone         String
+  suburb        String
+  serviceType   ServiceType
+  bedrooms      Int
+  bathrooms     Int
+  frequency     Frequency
+  addonIds      String[]
+  notes         String?
+  quotedPrice   Decimal     @db.Decimal(10, 2)
+  status        LeadStatus  @default(new)
+  emailSent     Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model AdminSession {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
