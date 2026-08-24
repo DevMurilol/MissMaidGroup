@@ -50,3 +50,6 @@ cloudflare-env.d.ts
 
 # The template must ship; the real file must never.
 !.env.example
+
+# Machine-local Claude Code permissions, not shared.
+.claude/settings.local.json
