@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import Image from "next/image";
 import { Menu, Phone, X } from "lucide-react";
 import { Container } from "@/components/ui/container";
@@ -41,7 +40,11 @@ export function Header() {
       )}
     >
       <Container className="flex h-20 items-center justify-between">
-        <Link href="#home" className="flex items-center">
+        {/* Plain anchor, not <Link>: this sits in a sticky header that is
+            always in the viewport, and as a <Link> the router kept prefetching
+            "/" for as long as it was visible. A same-page hash needs no
+            client-side navigation anyway. */}
+        <a href="#home" className="flex items-center">
           {/* Wordmark already reads "miss maid", so no text label beside it. */}
           <Image
             src="/images/logo-wordmark.png"
@@ -52,7 +55,7 @@ export function Header() {
             fetchPriority="high"
             className="h-9 w-auto shrink-0 sm:h-11"
           />
-        </Link>
+        </a>
 
         <nav className="hidden items-center gap-9 lg:flex">
           {navLinks.map((link) => (

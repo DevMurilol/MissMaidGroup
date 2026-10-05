@@ -10,7 +10,8 @@ export function Footer() {
       <Container>
         <div className="grid gap-12 sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <Link href="#home" className="inline-flex">
+            {/* Same-page hash: plain anchor, see the note in header.tsx. */}
+            <a href="#home" className="inline-flex">
               {/* Reversed wordmark: the brand green is only 1.2:1 on this
                   dark background, so the mono-white variant is used here. */}
               <Image
@@ -20,7 +21,7 @@ export function Footer() {
                 height={44}
                 className="h-10 w-auto"
               />
-            </Link>
+            </a>
             <p className="mt-4 max-w-xs text-sm leading-relaxed">
               Reliable, insured house cleaning across the Gold Coast, delivered with hotel-level
               attention to detail.
@@ -66,12 +67,17 @@ export function Footer() {
             <h3 className="font-heading text-sm font-bold uppercase tracking-wide text-white">Legal</h3>
             <ul className="mt-4 flex flex-col gap-2.5 text-sm">
               <li>
-                <Link href="/terms" className="transition-colors hover:text-white">
+                {/* prefetch off on both legal links. Their RSC prefetch is what
+                    spun into a request loop in production, and the Worker caches
+                    these responses for a year behind a Vary on RSC headers that
+                    Cloudflare does not honour, so the wrong variant can stick.
+                    Almost nobody clicks these, so prefetching buys nothing. */}
+                <Link href="/terms" prefetch={false} className="transition-colors hover:text-white">
                   Terms of Service
                 </Link>
               </li>
               <li>
-                <Link href="/privacy" className="transition-colors hover:text-white">
+                <Link href="/privacy" prefetch={false} className="transition-colors hover:text-white">
                   Privacy Policy
                 </Link>
               </li>
