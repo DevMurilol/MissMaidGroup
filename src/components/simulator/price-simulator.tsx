@@ -29,6 +29,40 @@ const frequencies: { id: Frequency; label: string; hint: string }[] = [
 
 type Status = "idle" | "submitting" | "success" | "error";
 
+/**
+ * /api/quote answers a failed validation with the offending fields, but the
+ * visitor was only ever shown the generic "check the form" line, which gives
+ * them nothing to act on. This turns the response into something readable.
+ */
+type QuoteErrorBody = {
+  error?: string;
+  issues?: { properties?: Record<string, { errors?: string[] }> };
+};
+
+const FIELD_LABELS: Record<string, string> = {
+  name: "Name",
+  email: "Email",
+  phone: "Phone",
+  suburb: "Suburb",
+  notes: "Notes",
+  bedrooms: "Bedrooms",
+  bathrooms: "Bathrooms",
+};
+
+function readableError(body: QuoteErrorBody | null): string {
+  const byField = body?.issues?.properties;
+  if (byField) {
+    const lines = Object.entries(byField)
+      .map(([field, detail]) => {
+        const message = detail?.errors?.[0];
+        return message ? `${FIELD_LABELS[field] ?? field}: ${message}` : null;
+      })
+      .filter((line): line is string => line !== null);
+    if (lines.length) return lines.join("; ");
+  }
+  return body?.error ?? "Something went wrong. Please try again.";
+}
+
 export function PriceSimulator() {
   const [step, setStep] = useState<1 | 2>(1);
   const [status, setStatus] = useState<Status>("idle");
@@ -78,8 +112,8 @@ export function PriceSimulator() {
       });
 
       if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        throw new Error(body?.error || "Something went wrong. Please try again.");
+        const body = (await res.json().catch(() => null)) as QuoteErrorBody | null;
+        throw new Error(readableError(body));
       }
 
       setStatus("success");
