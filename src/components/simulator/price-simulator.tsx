@@ -7,14 +7,24 @@ import { SectionHeading } from "@/components/ui/section-heading";
 import { Button } from "@/components/ui/button";
 import { Reveal } from "@/components/ui/reveal";
 import { addOns, services, suburbs, type ServiceId } from "@/lib/site-config";
-import type { Frequency } from "@/lib/pricing";
+import { pricingRules, type Frequency } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
+
+/**
+ * The saving is stated against the one-off price, which is the comparison a
+ * visitor actually makes, and is read from the multipliers rather than typed in
+ * so a pricing change can never leave a stale "Save 15%" on the page.
+ */
+function savingVsOneOff(id: Frequency) {
+  const m = pricingRules.frequencyMultiplier;
+  return Math.round((1 - m[id] / m.once) * 100);
+}
 
 const frequencies: { id: Frequency; label: string; hint: string }[] = [
   { id: "once", label: "One-time", hint: "Single visit" },
-  { id: "weekly", label: "Weekly", hint: "Save 15%" },
-  { id: "fortnightly", label: "Fortnightly", hint: "Save 10%" },
-  { id: "monthly", label: "Monthly", hint: "Save 5%" },
+  { id: "weekly", label: "Weekly", hint: `Save ${savingVsOneOff("weekly")}%` },
+  { id: "fortnightly", label: "Fortnightly", hint: `Save ${savingVsOneOff("fortnightly")}%` },
+  { id: "monthly", label: "Monthly", hint: `Save ${savingVsOneOff("monthly")}%` },
 ];
 
 type Status = "idle" | "submitting" | "success" | "error";

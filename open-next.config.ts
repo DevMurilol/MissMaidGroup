@@ -1,17 +1,13 @@
 import { defineCloudflareConfig } from "@opennextjs/cloudflare";
-import kvIncrementalCache from "@opennextjs/cloudflare/overrides/incremental-cache/kv-incremental-cache";
-import kvTagCache from "@opennextjs/cloudflare/overrides/tag-cache/kv-next-tag-cache";
+import staticAssetsIncrementalCache from "@opennextjs/cloudflare/overrides/incremental-cache/static-assets-incremental-cache";
 
 export default defineCloudflareConfig({
-  // Workers KV is used for both caches: it is included in the Workers Free plan
-  // and, unlike R2, does not require a payment method on the account.
-  incrementalCache: kvIncrementalCache,
-  // Tag cache is what makes on-demand `revalidatePath()` work from the admin.
-  tagCache: kvTagCache,
-  // No queue/Durable Object: revalidations run inline. Fine at this traffic level.
-  queue: "direct",
-  // Serve prerendered pages straight from the cache without booting NextServer.
-  // This is the setting that keeps the public pages under the Free plan's 10ms
-  // CPU budget. Safe here because the app does not use PPR.
+  // Every page is prerendered at build time and nothing revalidates at runtime,
+  // so the prerendered HTML is read straight from the ASSETS binding. No KV
+  // namespaces, no tag cache, no queue: the only thing the Worker does on a
+  // request is answer /api/quote.
+  incrementalCache: staticAssetsIncrementalCache,
+  // Serve prerendered pages without booting NextServer. This is what keeps the
+  // public pages under the Free plan's 10ms CPU budget.
   enableCacheInterception: true,
 });

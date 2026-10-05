@@ -9,14 +9,6 @@ const nextConfig: NextConfig = {
     // (Cloudflare Images, billed per transformation) and drop this flag.
     unoptimized: true,
   },
-  // `pg` reaches for `pg-cloudflare` to open TCP sockets on Workers. That package
-  // exposes it only under the "workerd" export condition, which Next's file
-  // tracing (running as node) does not follow, so it copies dist/empty.js and the
-  // OpenNext bundle then fails to resolve dist/index.js. Force the whole package in.
-  outputFileTracingIncludes: {
-    "/*": ["./node_modules/pg-cloudflare/**/*"],
-    "/**/*": ["./node_modules/pg-cloudflare/**/*"],
-  },
 };
 
 export default nextConfig;

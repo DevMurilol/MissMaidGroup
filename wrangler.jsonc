@@ -7,26 +7,8 @@
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
-  },
-  "services": [
-    {
-      // Self-reference used by the cache layer. Must match "name" above.
-      "binding": "WORKER_SELF_REFERENCE",
-      "service": "miss-maid-group"
-    }
-  ],
-  "kv_namespaces": [
-    // Create both with:
-    //   npx wrangler kv namespace create NEXT_INC_CACHE_KV
-    //   npx wrangler kv namespace create NEXT_TAG_CACHE_KV
-    // then paste the returned ids here.
-    {
-      "binding": "NEXT_INC_CACHE_KV",
-      "id": "PASTE_INCREMENTAL_CACHE_KV_ID"
-    },
-    {
-      "binding": "NEXT_TAG_CACHE_KV",
-      "id": "PASTE_TAG_CACHE_KV_ID"
-    }
-  ]
+  }
+  // Runtime secrets are not declared here. Set them once with:
+  //   npx wrangler secret put RESEND_API_KEY
+  // and, for `npm run preview`, put the same key in .dev.vars (gitignored).
 }

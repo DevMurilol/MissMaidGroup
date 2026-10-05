@@ -1,8 +1,46 @@
-import { Resend } from "resend";
+import { Resend, type CreateEmailOptions } from "resend";
 import { addOns, services, siteConfig, type ServiceId } from "@/lib/site-config";
 import type { Frequency } from "@/lib/pricing";
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : undefined;
+
+/**
+ * Both emails are sent from the one mailbox the business actually owns.
+ *
+ * Resend only needs the *domain* verified, so a made-up sender like
+ * "quotes@missmaidgroup.com.au" would be allowed. It is deliberately not used:
+ * nothing would be watching that address if a reply or a bounce landed there.
+ *
+ * Note this must not be derived from siteConfig.url. That URL carries a "www."
+ * host, and "hello@www.missmaidgroup.com.au" is not a domain anyone verifies,
+ * so every send would be rejected.
+ */
+const FROM = `${siteConfig.name} <${siteConfig.email}>`;
+
+export type QuoteEmailResult = {
+  /** Notification to the business. This is the one that must not be lost. */
+  leadDelivered: boolean;
+  /** Courtesy confirmation to the customer. Nice to have, not critical. */
+  customerDelivered: boolean;
+  /** Why the lead email failed, when it did. */
+  reason?: string;
+};
+
+/**
+ * resend.emails.send() resolves with { data: null, error } on an API failure
+ * instead of throwing, so a plain try/catch (or Promise.allSettled) reports a
+ * rejected send as a success. The error field has to be read explicitly.
+ */
+async function deliver(options: CreateEmailOptions): Promise<{ ok: boolean; reason?: string }> {
+  if (!resend) return { ok: false, reason: "RESEND_API_KEY is not set" };
+  try {
+    const { error } = await resend.emails.send(options);
+    if (error) return { ok: false, reason: `${error.name}: ${error.message}` };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+  }
+}
 
 const frequencyLabel: Record<Frequency, string> = {
   once: "One-time",
@@ -22,11 +60,18 @@ export async function sendQuoteEmail(input: {
   frequency: Frequency;
   addonIds: string[];
   notes?: string;
-  price: { structural: number; addonsTotal: number; discount: number; total: number };
-}) {
+  price: {
+    hours: number;
+    hourlyRate: number;
+    labour: number;
+    addonsTotal: number;
+    frequencyUplift: number;
+    total: number;
+  };
+}): Promise<QuoteEmailResult> {
   if (!resend) {
-    console.warn("[quote] RESEND_API_KEY not set, skipping email send.");
-    return { sent: false as const };
+    console.error("[quote] RESEND_API_KEY is not set. Nothing was sent.");
+    return { leadDelivered: false, customerDelivered: false, reason: "RESEND_API_KEY is not set" };
   }
 
   const serviceName = services.find((s) => s.id === input.serviceId)?.name ?? input.serviceId;
@@ -40,6 +85,7 @@ export async function sendQuoteEmail(input: {
     <h2>New quote request, ${input.name}</h2>
     <p><strong>Calculated price:</strong> $${input.price.total.toFixed(2)} AUD</p>
     <ul>
+      <li><strong>Estimated time:</strong> ${input.price.hours} hours</li>
       <li><strong>Service:</strong> ${serviceName}</li>
       <li><strong>Bedrooms:</strong> ${input.bedrooms}</li>
       <li><strong>Bathrooms:</strong> ${input.bathrooms}</li>
@@ -52,7 +98,7 @@ export async function sendQuoteEmail(input: {
       <li><strong>Notes:</strong> ${input.notes || "None provided"}</li>
       <li><strong>Submitted:</strong> ${timestamp} (AEST)</li>
     </ul>
-    <p><em>Price breakdown</em>: base+rooms $${input.price.structural.toFixed(2)}, add-ons $${input.price.addonsTotal.toFixed(2)}, frequency discount $${input.price.discount.toFixed(2)}.</p>
+    <p><em>Price breakdown</em>: ${input.price.hours} hours at $${input.price.hourlyRate}/hour = $${input.price.labour.toFixed(2)}, add-ons $${input.price.addonsTotal.toFixed(2)}, frequency uplift $${input.price.frequencyUplift.toFixed(2)}.</p>
   `;
 
   const customerHtml = `
@@ -61,6 +107,7 @@ export async function sendQuoteEmail(input: {
     <p><strong>Your request:</strong></p>
     <ul>
       <li>${serviceName} &middot; ${input.bedrooms} bed / ${input.bathrooms} bath</li>
+      <li>Estimated ${input.price.hours} hours on site</li>
       <li>${frequencyLabel[input.frequency]} frequency</li>
       <li>Add-ons: ${addonNames}</li>
       <li>Suburb: ${input.suburb}</li>
@@ -69,23 +116,25 @@ export async function sendQuoteEmail(input: {
     <p>From the ${siteConfig.name} team</p>
   `;
 
-  const [internal, customer] = await Promise.allSettled([
-    resend.emails.send({
-      from: `${siteConfig.name} Quotes <quotes@${new URL(siteConfig.url).hostname}>`,
+  const [lead, customer] = await Promise.all([
+    deliver({
+      from: FROM,
       to: siteConfig.email,
+      // Hitting reply on the lead email answers the customer, not ourselves.
       replyTo: input.email,
       subject: `New quote request from ${input.name} (${input.suburb})`,
       html: internalHtml,
     }),
-    resend.emails.send({
-      from: `${siteConfig.name} <hello@${new URL(siteConfig.url).hostname}>`,
+    deliver({
+      from: FROM,
       to: input.email,
       subject: "Your Miss Maid Group quote is on the way!",
       html: customerHtml,
     }),
   ]);
 
-  return {
-    sent: internal.status === "fulfilled" || customer.status === "fulfilled",
-  };
+  if (!lead.ok) console.error("[quote] Lead email failed:", lead.reason);
+  if (!customer.ok) console.error("[quote] Customer confirmation failed:", customer.reason);
+
+  return { leadDelivered: lead.ok, customerDelivered: customer.ok, reason: lead.reason };
 }

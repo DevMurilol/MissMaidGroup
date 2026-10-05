@@ -1,47 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getPrisma } from "@/lib/prisma";
-import type { PrismaClient } from "@/generated/prisma/client";
 import { quoteFormSchema } from "@/lib/validation";
-import { calculateQuotePrice, pricingRules, type PricingRules } from "@/lib/pricing";
+import { calculateQuotePrice, pricingRules } from "@/lib/pricing";
 import { sendQuoteEmail } from "@/lib/resend";
-import { addOns as defaultAddOns, type AddOnView } from "@/lib/site-config";
-
-async function resolvePricingContext(
-  prisma: PrismaClient | undefined
-): Promise<{ rules: PricingRules; catalog: AddOnView[] }> {
-  if (!prisma) return { rules: pricingRules, catalog: [...defaultAddOns] };
-
-  const [dbRule, dbAddOns] = await Promise.all([prisma.pricingRule.findFirst(), prisma.addOn.findMany({ where: { isActive: true } })]);
-
-  const rules: PricingRules = dbRule
-    ? {
-        baseCallout: Number(dbRule.baseCallout),
-        perBedroom: Number(dbRule.perBedroom),
-        perBathroom: Number(dbRule.perBathroom),
-        serviceMultiplier: {
-          regular: Number(dbRule.regularMultiplier),
-          deep: Number(dbRule.deepMultiplier),
-          move: Number(dbRule.moveMultiplier),
-          airbnb: Number(dbRule.airbnbMultiplier),
-        },
-        frequencyDiscount: {
-          once: 0,
-          weekly: Number(dbRule.weeklyDiscount),
-          fortnightly: Number(dbRule.fortnightlyDiscount),
-          monthly: Number(dbRule.monthlyDiscount),
-        },
-      }
-    : pricingRules;
-
-  const catalog: AddOnView[] =
-    dbAddOns.length > 0 ? dbAddOns.map((a) => ({ id: a.slug, name: a.name, price: Number(a.price) })) : [...defaultAddOns];
-
-  return { rules, catalog };
-}
+import { addOns, siteConfig } from "@/lib/site-config";
 
 export async function POST(request: Request) {
-  const prisma = getPrisma();
   let payload: unknown;
   try {
     payload = await request.json();
@@ -64,7 +28,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  const { rules, catalog } = await resolvePricingContext(prisma);
   const price = calculateQuotePrice(
     {
       serviceId: data.serviceId,
@@ -73,33 +36,9 @@ export async function POST(request: Request) {
       frequency: data.frequency,
       addonIds: data.addonIds,
     },
-    rules,
-    catalog
+    pricingRules,
+    [...addOns]
   );
-
-  let leadSaved = false;
-  if (prisma) {
-    try {
-      await prisma.lead.create({
-        data: {
-          name: data.name,
-          email: data.email,
-          phone: data.phone,
-          suburb: data.suburb,
-          serviceType: data.serviceId,
-          bedrooms: data.bedrooms,
-          bathrooms: data.bathrooms,
-          frequency: data.frequency,
-          addonIds: data.addonIds,
-          notes: data.notes || null,
-          quotedPrice: price.total,
-        },
-      });
-      leadSaved = true;
-    } catch (error) {
-      console.error("[quote] Failed to save lead:", error);
-    }
-  }
 
   const emailResult = await sendQuoteEmail({
     name: data.name,
@@ -115,5 +54,16 @@ export async function POST(request: Request) {
     price,
   });
 
-  return NextResponse.json({ ok: true, leadSaved, emailSent: emailResult.sent });
+  // The lead email is the whole point: without it the request is lost. Say so
+  // instead of showing a success screen for something that never arrived.
+  if (!emailResult.leadDelivered) {
+    return NextResponse.json(
+      {
+        error: `We could not send your request just now. Please call ${siteConfig.phone} or email ${siteConfig.email} and we will take it from there.`,
+      },
+      { status: 502 }
+    );
+  }
+
+  return NextResponse.json({ ok: true, customerEmailed: emailResult.customerDelivered });
 }

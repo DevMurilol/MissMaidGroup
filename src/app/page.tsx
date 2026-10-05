@@ -17,41 +17,16 @@ import {
   buildLocalBusinessSchema,
   buildServiceSchema,
 } from "@/lib/schema";
-import { getPrisma } from "@/lib/prisma";
-import { services as staticServices, type ServiceView } from "@/lib/site-config";
+import { services } from "@/lib/site-config";
 
-// Prerendered at build time and refreshed hourly, so visitors are served static
-// HTML straight from Workers Static Assets instead of booting the Worker. Admin
-// edits do not wait for this window: the services API calls revalidatePath("/").
-export const revalidate = 3600;
+// Fully static. Every word on this page comes from site-config.ts, so the HTML
+// is generated once at build time and served from Workers Static Assets. The
+// Worker itself only runs for /api/quote. Content changes ship with a deploy.
 
-function applyEnvAirbnbOverride(list: ServiceView[]): ServiceView[] {
-  const showAirbnb = process.env.SHOW_AIRBNB_SERVICE === "true";
-  if (!showAirbnb) return list;
-  return list.map((service) => (service.id === "airbnb" ? { ...service, hidden: false } : service));
-}
-
-async function getServices(): Promise<ServiceView[]> {
-  const prisma = getPrisma();
-  if (!prisma) return applyEnvAirbnbOverride(staticServices);
-  const dbServices = await prisma.service.findMany({ orderBy: { sortOrder: "asc" } });
-  if (dbServices.length === 0) return applyEnvAirbnbOverride(staticServices);
-  return dbServices.map((s) => ({
-    id: s.slug,
-    name: s.name,
-    description: s.description,
-    points: s.points,
-    icon: s.icon,
-    featured: s.isFeatured,
-    hidden: !s.isActive,
-  }));
-}
-
-export default async function Home() {
-  const liveServices = await getServices();
+export default function Home() {
   const schemas = [
     buildLocalBusinessSchema(),
-    ...buildServiceSchema(liveServices),
+    ...buildServiceSchema(services),
     buildFaqSchema(),
     buildBreadcrumbSchema(),
   ];
@@ -70,10 +45,9 @@ export default async function Home() {
       <main className="flex-1">
         <Hero />
         <Benefits />
-        <Services services={liveServices} />
+        <Services services={services} />
         <HowItWorks />
         <Reviews />
-        <Gallery />
         <ServiceAreas />
         <FAQ />
         <PriceSimulator />

@@ -31,7 +31,13 @@ export function Header() {
     <header
       className={cn(
         "sticky top-0 z-50 w-full transition-all duration-300",
-        scrolled ? "bg-white/90 shadow-[var(--shadow-soft)] backdrop-blur-md" : "bg-white/0"
+        // Opaque, not bg-white/90: the header crosses two dark sections (the
+        // service areas band and the final CTA) and at 90% those bled through
+        // enough to drop the nav links to roughly 2:1 against their own
+        // background. Solid white keeps the dark text readable the whole way
+        // down. With no transparency there is nothing for backdrop-blur to do,
+        // so it goes too.
+        scrolled ? "bg-white shadow-[var(--shadow-soft)]" : "bg-transparent"
       )}
     >
       <Container className="flex h-20 items-center justify-between">

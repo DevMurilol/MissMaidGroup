@@ -1,114 +1,131 @@
 # Miss Maid Group
 
-Professional house cleaning landing page for the Gold Coast, built with Next.js 16 (App Router), TypeScript, Tailwind CSS v4, Prisma 7, and Resend.
+Professional house cleaning landing page for the Gold Coast, built with Next.js 16
+(App Router), TypeScript, Tailwind CSS v4 and Resend, deployed to Cloudflare Workers.
 
 ## Stack
 
-- **Next.js 16** (App Router, Turbopack, Server Actions)
-- **Cloudflare Workers** via `@opennextjs/cloudflare` (see [Deploying to Cloudflare](#deploying-to-cloudflare))
-- **TailwindCSS v4** with a custom brand token system (green/beige palette, Inter + Lato)
-- **Prisma 7** + PostgreSQL (driver adapter, `src/generated/prisma` client)
-- **Resend** for transactional quote emails
-- **Zod** for form/API validation
+- **Next.js 16** (App Router, Turbopack)
+- **Cloudflare Workers** via `@opennextjs/cloudflare` (see [Deploying](#deploying-to-cloudflare))
+- **Tailwind CSS v4** with a custom brand token system
+- **Resend** for the quote emails
+- **Zod** for form and API validation
+
+There is no database. Every word on the site lives in `src/lib/site-config.ts`
+and ships with a deploy. The only thing that runs on the server is
+`/api/quote`, which validates the form, prices it and sends two emails.
 
 ## Getting started
 
 ```bash
 npm install
-cp .env.example .env   # fill in real values
-npx prisma migrate dev --name init   # once DATABASE_URL is set
+cp .env.example .env   # add the Resend key
 npm run dev
 ```
 
-## Connecting Supabase
+The site runs without the key; quote submissions just log a warning instead of
+sending.
 
-1. In the Supabase dashboard open your project and click **Connect** (top bar).
-2. Copy two strings from the **ORMs / Postgres** tab and paste them into `.env`:
-   - **Transaction pooler** (`:6543`) into `DATABASE_URL` — used by the app at runtime,
-     it is the pooled connection that survives serverless concurrency.
-   - **Session pooler** (`:5432`) into `DIRECT_DATABASE_URL` — used only by
-     `prisma migrate`/`prisma db`, since DDL needs a non transaction-pooled session.
-     (The **Direct connection** string works too, but it is IPv6-only unless the
-     project has the IPv4 add-on.)
-3. Replace `[YOUR-PASSWORD]` with the database password (Settings > Database >
-   *Reset database password* if you no longer have it). URL-encode special
-   characters: `@` -> `%40`, `#` -> `%23`, `/` -> `%2F`.
-4. Keep `?sslmode=require` at the end of both — Supabase requires TLS.
-5. Create the tables and generate the client:
+## How a quote flows
 
-```bash
-npx prisma migrate dev --name init
+```
+browser form  ->  POST /api/quote (Worker)  ->  Resend
+                                                 |- internal email  -> hello@missmaidgroup.com.au
+                                                 '- confirmation    -> the customer
 ```
 
-6. Start the app, sign in at `/admin` and click **"Load starter data from spec"**
-   on the Services or Add-ons page to seed the defaults.
+The internal email carries every field plus the calculated price, arrives with
+`Reply-To` set to the customer, and is the system of record. The Resend key
+never reaches the browser: the form only ever calls `/api/quote`.
 
-Migrations are resolved through `prisma.config.ts`, which prefers
-`DIRECT_DATABASE_URL` and falls back to `DATABASE_URL` when it is empty.
-In production these are Cloudflare secrets, not `.env` values — see
-[Deploying to Cloudflare](#deploying-to-cloudflare).
+**A lead is never silently lost.** The Resend SDK resolves with
+`{ data: null, error }` rather than throwing, so `src/lib/resend.ts` reads that
+error field explicitly. If the lead email does not go out, `/api/quote` answers
+502 and the form tells the visitor to call or email instead of showing a
+confirmation. The customer acknowledgement failing is only logged: by then the
+lead is already safe.
 
-The site works with zero configuration, the homepage renders from the static
-content in `src/lib/site-config.ts` if no database is connected. Connecting a
-database unlocks the admin panel and lets it override services, add-ons, and
-pricing live.
+Pricing lives in `src/lib/pricing.ts`, services and add-ons in
+`src/lib/site-config.ts`. To show the Airbnb service, flip `hidden: true` to
+`false` on that entry and deploy.
 
 ## Deploying to Cloudflare
 
-The app runs on **Cloudflare Workers** through the OpenNext adapter. Everything
-below fits the Workers **Free** plan (100k requests/day, commercial use allowed).
+The app runs on **Cloudflare Workers** through the OpenNext adapter and fits the
+Workers **Free** plan (100k requests/day, commercial use allowed).
 
 ### One-time setup
+
+**1. Verify the sending domain in Resend.** Add `missmaidgroup.com.au` under
+Domains at resend.com and publish the DKIM, SPF and return-path records it gives
+you at your DNS provider. Until that is green, Resend rejects every send and the
+form shows its error message instead of a confirmation.
+
+Both emails are sent from `siteConfig.email`, the one mailbox the business owns.
+Resend only needs the domain verified, so an invented sender like `quotes@` would
+also be accepted, but nothing would be watching that address if a reply or a
+bounce landed there.
+
+| | From | To | Reply-To |
+|---|---|---|---|
+| Lead notification | `hello@missmaidgroup.com.au` | `hello@missmaidgroup.com.au` | the customer |
+| Customer confirmation | `hello@missmaidgroup.com.au` | the customer | — |
+
+The lead notification is addressed to the same mailbox it is sent from. Replying
+to it answers the customer, because `Reply-To` carries their address.
+
+**2. Set the key on the Worker:**
 
 ```bash
 npx wrangler login
 ```
 
-Create the two KV namespaces used for the ISR cache and paste the returned ids
-into `wrangler.jsonc`:
-
 ```bash
-npx wrangler kv namespace create NEXT_INC_CACHE_KV
+npx wrangler secret put RESEND_API_KEY
 ```
 
-```bash
-npx wrangler kv namespace create NEXT_TAG_CACHE_KV
-```
-
-Then set the production secrets (these are *not* read from `.env`):
-
-```bash
-for v in DATABASE_URL RESEND_API_KEY ADMIN_EMAIL ADMIN_PASSWORD ADMIN_SESSION_SECRET; do npx wrangler secret put $v; done
-```
-
-`DIRECT_DATABASE_URL` is only used by `prisma migrate`, so it stays local.
+That is the whole setup. There are no KV namespaces, queues or bindings to
+create: every page is prerendered and served from Workers Static Assets, and
+`wrangler.jsonc` declares nothing beyond the assets directory.
 
 ### Deploying
+
+Pushes to `main` deploy automatically through
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). Pull requests
+run the same build without deploying, so a broken bundle is caught before merge.
+
+Two repository secrets are needed once (Settings > Secrets and variables > Actions):
+
+| Secret | Where to get it |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | dash.cloudflare.com > My Profile > API Tokens > Create, using the **Edit Cloudflare Workers** template |
+| `CLOUDFLARE_ACCOUNT_ID` | Workers & Pages overview, right-hand column |
+
+The deploy job targets a GitHub environment called `production`. Add required
+reviewers to it if you want a manual approval step before anything goes live.
+
+To deploy from a machine instead:
 
 ```bash
 npm run deploy
 ```
 
 `npm run preview` does the same build but serves it locally in the Workers
-runtime (workerd) instead of deploying.
+runtime (workerd) instead of deploying. Put the Resend key in `.dev.vars` for
+that; the Worker runtime does not read `.env`.
 
-### Staying inside the Free plan
+### How it stays inside the Free plan
 
-The Free plan allows 3 MiB (gzip) per Worker and **10 ms of CPU per request**,
-which plain SSR would blow past. Three things keep the app inside it:
+The Free plan allows 3 MiB (gzip) per Worker and **10 ms of CPU per request**.
+The Worker is ~1.2 MiB, and almost no request touches it:
 
-- **The public pages are prerendered.** `src/app/page.tsx` sets
-  `export const revalidate = 3600`, and `enableCacheInterception` in
-  `open-next.config.ts` serves those pages from Workers Static Assets without
-  booting the Next server. Static asset requests are free, unlimited, and cost
-  no CPU. Only `/admin` and `/api/*` actually invoke the Worker.
-- **Admin edits still publish instantly.** `/api/admin/services` and
-  `/api/admin/seed` call `revalidatePath("/")`, so the homepage regenerates on
-  save rather than waiting out the hour.
-- **The Prisma query compiler is the `small` build** (`compilerBuild` in
-  `prisma/schema.prisma`). The default `fast` build embeds a ~4.8 MB base64 WASM
-  blob that pushes the Worker to ~3.1 MiB gzip, just over the limit. With
-  `small` the bundle is ~2.4 MiB.
+- **Every page is fully static.** Nothing has `revalidate`, so Next prerenders
+  the lot at build time. `open-next.config.ts` uses the
+  `staticAssetsIncrementalCache` override with `enableCacheInterception`, which
+  serves those pages from the `ASSETS` binding without booting the Next server.
+  Static asset requests are free, unlimited and cost no CPU.
+- **Only `/api/quote` runs code.** One Zod parse, one price calculation, two
+  Resend calls.
 
 Check the size after any dependency change:
 
@@ -116,67 +133,36 @@ Check the size after any dependency change:
 npx wrangler deploy --dry-run
 ```
 
-### Building on Windows
-
-The bundling step creates symlinks, which Windows only permits with **Developer
-Mode** enabled (Settings > Privacy & security > For developers) or from an
-elevated terminal. Without it the build fails with `EPERM: operation not
-permitted, symlink`. Building in WSL or in CI avoids this entirely.
-
 ### Notes and limits
 
 - `next/image` optimization is off (`unoptimized: true`): the files in
   `public/images` are already sized WebP and are served straight from static
-  assets. To re-enable it, add the `IMAGES` binding to `wrangler.jsonc` —
-  Cloudflare Images bills per transformation.
-- The database client is created **per request** (`src/lib/prisma.ts`). Workers
-  cannot reuse a connection across requests, so there is no global singleton and
-  the pool is set to `maxUses: 1`.
-- `pg-cloudflare` is force-included through `outputFileTracingIncludes` in
-  `next.config.ts`; Next's tracer otherwise misses it and the bundle fails to
-  resolve the Workers TCP socket implementation.
+  assets. To re-enable it, add the `IMAGES` binding to `wrangler.jsonc` and
+  note that Cloudflare Images bills per transformation.
+- Deploy with `opennextjs-cloudflare deploy`, not bare `wrangler deploy`. The
+  former copies the prerendered pages into the assets bundle
+  (`cdn-cgi/_next_cache/`) first. Without that copy the cache lookup misses on
+  every request, the Next server renders each page, and the logs fill with
+  `StaticAssetsIncrementalCache: Failed to set to read-only cache`.
+- The build works on Windows. An earlier version of this project pulled in
+  Prisma and `pg`, which Next externalises as directory junctions that OpenNext
+  then failed to recreate as symlinks without Developer Mode. With those gone,
+  `npm run deploy` runs anywhere.
 
 ## Environment variables
 
-See `.env.example`. Required for full functionality:
-
 | Variable | Purpose |
 |---|---|
-| `DATABASE_URL` | Postgres connection string used at runtime (Supabase transaction pooler, `:6543`) |
-| `DIRECT_DATABASE_URL` | Non-pooled connection used by `prisma migrate` (Supabase session pooler, `:5432`). Optional — falls back to `DATABASE_URL` |
-| `RESEND_API_KEY` | Sends the internal + customer quote emails |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Credentials for `/admin` |
-| `ADMIN_SESSION_SECRET` | Signs the admin session cookie (`openssl rand -hex 32`) |
-| `SHOW_AIRBNB_SERVICE` | Fallback toggle for the hidden Airbnb service when no database is connected |
+| `RESEND_API_KEY` | Sends the internal lead email and the customer confirmation |
 
-## Admin panel
-
-Visit `/admin` (redirects to `/admin/login`). Once signed in:
-
-- **Leads** — every quote request, status tracking, CSV export.
-- **Services** — toggle services on/off (this is what reveals Airbnb Cleaning), edit copy, mark a featured service.
-- **Add-ons** — add/remove/reprice extras shown in the price simulator.
-- **Quote Rules** — base pricing, per-service multipliers, frequency discounts. Changes apply to new quotes immediately.
-
-The first time you connect a database, open **Services** or **Add-ons** and
-click **"Load starter data from spec"** to seed the defaults from
-`site-config.ts` and `pricing.ts`.
+Local dev reads it from `.env`. The local Worker (`npm run preview`) reads
+`.dev.vars`. Production reads the Cloudflare secret. All three are gitignored.
 
 ## Images
 
-`public/images/hero-home.webp` and the kitchen before/after pair were AI-generated
-and optimized to WebP via `npm run optimize-images` (uses `sharp`). The gallery
-section intentionally shows one real, well-matched before/after pair rather than
-mismatched stock placeholders — add more real pairs in `src/lib/site-config.ts`
-(`galleryShowcase`) as photos become available.
-
-## Notes on scope
-
-- The public quote simulator's add-on catalog is served from the static config
-  for reliability; admin-managed add-on **prices** are honored server-side when
-  calculating quotes if the slugs match.
-- Admin pages and API routes each verify the signed session cookie through
-  `src/lib/admin-session.ts` (`requireAdminPage` / `requireAdminApi`). There is
-  deliberately no `proxy.ts`: Next 16 pins Proxy to the Node.js runtime, which
-  Cloudflare Workers cannot run, and the Next.js auth guide recommends checking
-  per route rather than in a proxy or layout anyway.
+`public/images/` holds the hero, the logo in three variants, and one real
+before/after pair from a job. The gallery uses a cross-fade rather than a wipe
+because hand-held job photos never register pixel for pixel, and a wipe shows
+that as a hard seam. Add more pairs in `src/lib/site-config.ts`
+(`galleryShowcase`) as photos come in; keep both frames at the same aspect
+ratio and run `npm run optimize-images` to convert them to WebP.
